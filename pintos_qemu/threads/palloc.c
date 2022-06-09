@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 #include "threads/loader.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
@@ -42,6 +43,7 @@ static bool page_from_pool (const struct pool *, void *page);
 
 /* Initializes the page allocator.  At most USER_PAGE_LIMIT
    pages are put into the user pool. */
+//페이지 할당자 초기화 함수. 커널과 유저 페이지 나눠서 각자 할당
 void
 palloc_init (size_t user_page_limit)
 {
@@ -67,6 +69,7 @@ palloc_init (size_t user_page_limit)
    then the pages are filled with zeros.  If too few pages are
    available, returns a null pointer, unless PAL_ASSERT is set in
    FLAGS, in which case the kernel panics. */
+   //연속된 페이지 할당
 void *
 palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
 {
@@ -78,6 +81,7 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
     return NULL;
 
   lock_acquire (&pool->lock);
+  //여기를 바꾸자
   page_idx = bitmap_scan_and_flip (pool->used_map, 0, page_cnt, false);
   lock_release (&pool->lock);
 
