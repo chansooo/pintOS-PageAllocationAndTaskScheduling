@@ -24,6 +24,7 @@ typedef unsigned long elem_type;
 /* From the outside, a bitmap is an array of bits.  From the
    inside, it's an array of elem_type (defined above) that
    simulates an array of bits. */
+   //비트맵 -> 비트 배열. elemtype인 실제 배열이 있다
 struct bitmap
   {
     size_t bit_cnt;     /* Number of bits. */
@@ -75,6 +76,7 @@ last_mask (const struct bitmap *b)
    BIT_CNT (or more) bits.  Returns a null pointer if memory allocation fails.
    The caller is responsible for freeing the bitmap, with bitmap_destroy(),
    when it is no longer needed. */
+   //공간이 있는 새로 할당된 비트맵에 대한 포인터 만들고 반환
 struct bitmap *
 bitmap_create (size_t bit_cnt) 
 {
@@ -111,6 +113,7 @@ bitmap_create_in_buf (size_t bit_cnt, void *block, size_t block_size UNUSED)
 
 /* Returns the number of bytes required to accomodate a bitmap
    with BIT_CNT bits (for use with bitmap_create_in_buf()). */
+   //비트맵 수용하는 데 필요한 바이트 수 반환
 size_t
 bitmap_buf_size (size_t bit_cnt) 
 {
@@ -119,6 +122,7 @@ bitmap_buf_size (size_t bit_cnt)
 
 /* Destroys bitmap B, freeing its storage.
    Not for use on bitmaps created by bitmap_create_in_buf(). */
+   //비트맵 파괴해서 저장 공간 확보
 void
 bitmap_destroy (struct bitmap *b) 
 {
@@ -132,6 +136,7 @@ bitmap_destroy (struct bitmap *b)
 /* Bitmap size. */
 
 /* Returns the number of bits in B. */
+//b의 비트 수 반환
 size_t
 bitmap_size (const struct bitmap *b)
 {
@@ -166,6 +171,7 @@ bitmap_mark (struct bitmap *b, size_t bit_idx)
 }
 
 /* Atomically sets the bit numbered BIT_IDX in B to false. */
+//b의 idx에 있는 값 flase로 
 void
 bitmap_reset (struct bitmap *b, size_t bit_idx) 
 {
@@ -181,6 +187,7 @@ bitmap_reset (struct bitmap *b, size_t bit_idx)
 /* Atomically toggles the bit numbered IDX in B;
    that is, if it is true, makes it false,
    and if it is false, makes it true. */
+   //b의 idx에 해당하는 값 반대로
 void
 bitmap_flip (struct bitmap *b, size_t bit_idx) 
 {
@@ -194,6 +201,7 @@ bitmap_flip (struct bitmap *b, size_t bit_idx)
 }
 
 /* Returns the value of the bit numbered IDX in B. */
+//B에서 비트 번호 매겨진 인덱스 반환
 bool
 bitmap_test (const struct bitmap *b, size_t idx) 
 {
@@ -205,6 +213,7 @@ bitmap_test (const struct bitmap *b, size_t idx)
 /* Setting and testing multiple bits. */
 
 /* Sets all bits in B to VALUE. */
+
 void
 bitmap_set_all (struct bitmap *b, bool value) 
 {
@@ -316,6 +325,7 @@ bitmap_scan (const struct bitmap *b, size_t start, size_t cnt, bool value)
    If CNT is zero, returns 0.
    Bits are set atomically, but testing bits is not atomic with
    setting them. */
+   //bitmap_scan호출해서 인덱스 찾아서 flip
 size_t
 bitmap_scan_and_flip (struct bitmap *b, size_t start, size_t cnt, bool value)
 {
