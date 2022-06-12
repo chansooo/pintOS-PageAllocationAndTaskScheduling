@@ -1,0 +1,9 @@
+{
+    "files.associations": {
+        "locale": "c",
+        "typeinfo": "c",
+        "utility": "c",
+        "__threading_support": "c"
+    },
+    "C_Cpp.errorSquiggles": "Disabled"
+}
