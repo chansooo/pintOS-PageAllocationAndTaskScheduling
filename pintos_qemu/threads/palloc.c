@@ -34,6 +34,22 @@ struct pool
     uint8_t *base;                      /* Base of pool. */
   };
 
+struct block 
+{
+  size_t idx;
+  struct list_elem elem;
+}
+//찬수가 한 거~
+//list 8개로 만들자!
+struct list[8] page_list;
+
+for(int i=0; i<8; i++){
+  list_init(page_list[i]);
+}
+
+list_push_back(list[8], );
+
+
 /* Two pools: one for kernel data, one for user pages. */
 static struct pool kernel_pool, user_pool;
 
@@ -87,6 +103,7 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
 
   if (page_idx != BITMAP_ERROR)
     pages = pool->base + PGSIZE * page_idx;
+   // pages = pool->base + 버디블록베이스(메모리 주소)
   else
     pages = NULL;
 
@@ -111,6 +128,7 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
    then the page is filled with zeros.  If no pages are
    available, returns a null pointer, unless PAL_ASSERT is set in
    FLAGS, in which case the kernel panics. */
+   //단일 페이지 할당
 void *
 palloc_get_page (enum palloc_flags flags) 
 {
@@ -192,4 +210,81 @@ palloc_get_status (enum palloc_flags flags)
   //IMPLEMENT THIS
   //PAGE STATUS 0 if FREE, 1 if USED
   //32 PAGE STATUS PER LINE
+}
+
+//-----------------------------------------------
+typedef unsigned long elem_type;
+
+struct bitmap
+  {
+    size_t bit_cnt;     /* Number of bits. */
+    elem_type *bits;    /* Elements that represent bits. */
+  };
+
+//2^n에서 buddy의 공간을 최적으로 사용하는 크기 return
+size_t
+find_power_of_two(struct bitmap *b){
+  size_t temp = bitmap_size(b);
+  for(size_t i=0;;i++){
+    //2의 i승이 temp보다 크다면 해당 i 반환
+    if(temp <= pow(2,i)){
+      return i;
+    }
+  }
+}
+
+
+// size_t
+// bitmap_scan_and_flip (struct bitmap *b, size_t start, size_t cnt, bool value)
+// {
+//   size_t idx = bitmap_scan (b, start, cnt, value);
+//   if (idx != BITMAP_ERROR) 
+//     bitmap_set_multiple (b, idx, cnt, !value);
+//   return idx;
+// }
+
+/* Finds and returns the starting index of the first group of CNT
+   consecutive bits in B at or after START that are all set to
+   VALUE.
+   If there is no such group, returns BITMAP_ERROR. */
+   //들어갈 곳 찾는 주요 로직
+size_t
+bitmap_scan (const struct bitmap *b, size_t start, size_t cnt, bool value) 
+{
+  ASSERT (b != NULL);
+  ASSERT (start <= b->bit_cnt);
+
+  if (cnt <= b->bit_cnt) 
+    {
+      size_t last = b->bit_cnt - cnt;
+      size_t i;
+      for (i = start; i <= last; i++)
+      //여기서 가능한 곳이 나오면 바로 return해버리는 것임
+      //그러면 우리는! 바로 return 때리는 것이 아니라 빈 공간의 크기를 측정해서 2^n에 가장 가까운 index를 return해주면 된다
+      //그러면 우리는! i를 찾았을 때 크기를 확인하고 temp에 저장한 다음  
+      //이게 아니야
+      //쪼개진 아이들을 생각해야해
+      //할당해줄 때 
+        if (!bitmap_contains (b, i, cnt, !value)) 
+          return i; 
+    }
+  return BITMAP_ERROR;
+}
+
+/* Returns true if any bits in B between START and START + CNT,
+   exclusive, are set to VALUE, and false otherwise. */
+   //start~start+cnt까지 가능한 지점 있는지 확인
+bool
+bitmap_contains (const struct bitmap *b, size_t start, size_t cnt, bool value) 
+{
+  size_t i;
+  
+  ASSERT (b != NULL);
+  ASSERT (start <= b->bit_cnt);
+  ASSERT (start + cnt <= b->bit_cnt);
+
+  for (i = 0; i < cnt; i++)
+    if (bitmap_test (b, start + i) == value)
+      return true;
+  return false;
 }
