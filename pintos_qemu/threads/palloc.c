@@ -287,6 +287,18 @@ init_pool (struct pool *p, void *base, size_t page_cnt, const char *name)
   lock_init (&p->lock);
   p->used_map = bitmap_create_in_buf (page_cnt, base, bm_pages * PGSIZE);
   p->base = base + bm_pages * PGSIZE;
+
+
+
+  //리스트 초기화
+  for(int i=0; i<9; i++){
+    list_init(&block_list[i]);
+  }
+
+  struct block *first_block;
+  first_block->idx = 0;
+
+  list_push_back(&block_list[8], first_block->elem);
 }
 
 /* Returns true if PAGE was allocated from POOL,
