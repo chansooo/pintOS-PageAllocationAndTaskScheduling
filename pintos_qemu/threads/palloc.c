@@ -219,7 +219,7 @@ palloc_get_status (enum palloc_flags flags)
   // TODO: IMPLEMENT THIS
   struct bitmap *kernel_bitmap = kernel_pool.used_map;
   size_t kernel_size = bitmap_size(kernel_bitmap);
-  printf("Page Count : %d\n", kernel_size);
+  printf("Page Info\n");
 
   
   for (int i = 1; i <= 32; i++) 
