@@ -125,11 +125,27 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
   lock_acquire (&pool->lock);
   //여기를 바꾸자
   page_idx = bitmap_scan_and_flip (pool->used_map, 0, page_cnt, false);
+  for(int i=0; i<9;i++){ //2^8 = 256까지만 고려?
+    
+    //쓸 수 있는 블록 있는데 
+    if(!list_empty(block_list[i])){ //쓸 수 있는 block이 있으면
+      if(find_power_of_two(page_cnt) <= pow(2,i)){ //그 block에 page가 들어갈 수 있으면      
+        b = list_entry(list_pop_front(&block_list[i], struct block, elem));
+        if(i == 1 || find_power_of_two(page_cnt) > pow(2,i-1)){ //딱 맞으면 그대로 할당
+
+        } else{ // 들어가긴 하는데 너무 과분하면
+          struct block *b2; //여기에 선언하면 사라지나?
+          b2->idx = b->idx + pow(2,(i-1)); // +1해줘야하나?
+          list_push_back(&block_list[i], &b2->elem);
+        }
+        page_idx = b->idx;
+      }
+    }
+  }
   lock_release (&pool->lock);
 
   if (page_idx != BITMAP_ERROR)
-    pages = pool->base + PGSIZE * page_idx;
-   // pages = pool->base + 버디블록베이스(메모리 주소)
+    pages = pool->base + page_idx; //pool + block의 인덱스로 넘겨주기
   else
     pages = NULL;
 
