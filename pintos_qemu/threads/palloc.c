@@ -95,6 +95,14 @@ find_power_of_two(size_t b){
     }
   }
 }
+
+size_t pow(size_t num, size_t n){
+  for(int i =0; i < n; i++){
+    num = num * 2;
+  }
+  return num;
+}
+
    //연속된 페이지 할당
 void *
 palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
