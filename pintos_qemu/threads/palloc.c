@@ -203,6 +203,43 @@ palloc_free_multiple (void *pages, size_t page_cnt)
 
   ASSERT (bitmap_all (pool->used_map, page_idx, page_cnt));
   bitmap_set_multiple (pool->used_map, page_idx, page_cnt, false);
+      //합칠 수 있는지 확인
+      //꺼낸 게 buddy라면 합칠 게 사용 중이니까 그대로 두기
+     
+      size_t size = list_size(&block_list[i]);
+      struct block *c;
+
+
+      
+      //b가 buddy 중 앞에 있는 아이라면
+      if((b->idx / pow(2,i)) % 2 == 0 ){
+        while(size){ //blocklist에 버디 있는지 확인
+          c = list_entry(list_pop_front(&block_list[i], struct block, elem)); 
+          if(c->idx == (page_idx + pow(2,i))){
+            //버디 있으면 합치기
+            c->idx = page_idx;
+            list_push_back(&block_list[i+1], &c)
+            break;
+          }
+          list_push_back(&block_list[i], &c);
+          size--;
+        }
+      } else{
+        //b가 buddy 중 뒤에 있는 아이라면
+        while(size){ //blocklist에 버디 있는지 확인
+          c = list_entry(list_pop_front(&block_list[i], struct block, elem)); 
+          if(c->idx == (page_idx - pow(2,i))){
+            //버디 있으면 합치기
+            c->idx = page_idx - pow(2,i);
+            list_push_back(&block_list[i+1], &c)
+            break;
+          }
+          list_push_back(&block_list[i], &c);
+          size--;
+        }
+      }
+    }
+  }
 }
 
 /* Frees the page at PAGE. */
