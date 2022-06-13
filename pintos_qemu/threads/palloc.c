@@ -91,9 +91,17 @@ find_power_of_two(size_t b){
   for(size_t i=0;;i++){
     //2의 i승이 temp보다 크다면 해당 i 반환
     if(b <= pow(2,i)){ 
+size_t next_power_of_2(size_t size)
+{
+    /* depend on the fact that size < 2^32 */
+  int i =1;
+  while(true){
+    if(size < i){
       return i;
     }
+    i = i * 2;
   }
+  return i
 }
 
 size_t pow(size_t num, size_t n){
