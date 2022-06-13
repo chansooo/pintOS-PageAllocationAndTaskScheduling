@@ -527,17 +527,17 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread){
-    if(t->priority == 0){
+    if(cur->priority == 0){
       cur->priority = cur->priority +1;
-      list_push_back(&ready_list1, &t->elem);
-    }else if(t->priority == 1){
+      list_push_back(&ready_list1, &cur->elem);
+    }else if(cur->priority == 1){
       cur->priority = cur->priority +1;
-     list_push_back(&ready_list2, &t->elem);
-   }else if(t->priority == 2){
+     list_push_back(&ready_list2, &cur->elem);
+   }else if(cur->priority == 2){
      cur->priority = cur->priority +1;
-     list_push_back(&ready_list3, &t->elem);
-   }else if(t->priority == 3){
-      list_push_back(&ready_list3, &t->elem);
+     list_push_back(&ready_list3, &cur->elem);
+   }else if(cur->priority == 3){
+      list_push_back(&ready_list3, &cur->elem);
     }
   } 
     
