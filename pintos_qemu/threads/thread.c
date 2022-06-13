@@ -210,7 +210,7 @@ thread_tick (void)
         temp_thread->age++;
         if(t->age >= 20){
           list_pop_front(&ready_list2); //queue2에 있는 거 꺼내고
-          list_push_back(&ready_list1, &temp_thread.elem); //queue1에 넣어줌
+          list_push_back(&ready_list1, &temp_thread->elem); //queue1에 넣어줌
           temp_thread->age = 0;
           temp_thread->priority = 1;
           temp_elem = list_begin(&ready_list2);
@@ -225,7 +225,7 @@ thread_tick (void)
         temp_thread->age++;
         if(t->age >= 20){
           list_pop_front(&ready_list3); //queue1에 있는 거 꺼내고
-          list_push_back(&ready_list2, &temp_thread.elem); //queue0에 넣어줌
+          list_push_back(&ready_list2, &temp_thread->elem); //queue0에 넣어줌
           temp_thread->age = 0;
           temp_thread->priority = 2;
           temp_elem = list_begin(&ready_list3);
@@ -243,7 +243,7 @@ thread_tick (void)
         temp_thread->age++;
         if(t->age >= 20){
           list_pop_front(&ready_list2); //queue2에 있는 거 꺼내고
-          list_push_back(&ready_list1, &temp_thread.elem); //queue1에 넣어줌
+          list_push_back(&ready_list1, &temp_thread->elem); //queue1에 넣어줌
           temp_thread->age = 0;
           temp_thread->priority = 0;
           temp_elem = list_begin(&ready_list2);
@@ -258,7 +258,7 @@ thread_tick (void)
         temp_thread->age++;
         if(t->age >= 20){
           list_pop_front(&ready_list3); //queue1에 있는 거 꺼내고
-          list_push_back(&ready_list2, &temp_thread.elem); //queue0에 넣어줌
+          list_push_back(&ready_list2, &temp_thread->elem); //queue0에 넣어줌
           temp_thread->age = 0;
           temp_thread->priority = 2;
           temp_elem = list_begin(&ready_list3);
@@ -276,7 +276,7 @@ thread_tick (void)
         temp_thread->age++;
         if(t->age >= 20){
           list_pop_front(&ready_list3); //queue1에 있는 거 꺼내고
-          list_push_back(&ready_list2, &temp_thread.elem); //queue0에 넣어줌
+          list_push_back(&ready_list2, &temp_thread->elem); //queue0에 넣어줌
           temp_thread->age = 0;
           temp_thread->priority = 2;
           temp_elem = list_begin(&ready_list3);
