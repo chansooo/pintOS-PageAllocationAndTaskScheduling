@@ -195,10 +195,10 @@ thread_tick (void)
         temp_thread->age++;
         if(t->age >= 20){
           list_pop_front(&ready_list1); //queue1에 있는 거 꺼내고
-          list_push_back(&ready_list0, &temp_thread.elem); //queue0에 넣어줌
+          list_push_back(&ready_list0, &temp_thread->elem); //queue0에 넣어줌
           temp_thread->age = 0;
           temp_thread->priority = 0;
-          temp_elem = list_begin(ready_list1);
+          temp_elem = list_begin(&ready_list1);
         }else{
           temp_elem = list_next(temp_elem);
         }
@@ -213,7 +213,7 @@ thread_tick (void)
           list_push_back(&ready_list1, &temp_thread.elem); //queue1에 넣어줌
           temp_thread->age = 0;
           temp_thread->priority = 1;
-          temp_elem = list_begin(ready_list2);
+          temp_elem = list_begin(&ready_list2);
         }else{
           temp_elem = list_next(temp_elem);
         }
@@ -228,7 +228,7 @@ thread_tick (void)
           list_push_back(&ready_list2, &temp_thread.elem); //queue0에 넣어줌
           temp_thread->age = 0;
           temp_thread->priority = 2;
-          temp_elem = list_begin(ready_list3);
+          temp_elem = list_begin(&ready_list3);
         }else{
           temp_elem = list_next(temp_elem);
         }
@@ -246,7 +246,7 @@ thread_tick (void)
           list_push_back(&ready_list1, &temp_thread.elem); //queue1에 넣어줌
           temp_thread->age = 0;
           temp_thread->priority = 0;
-          temp_elem = list_begin(ready_list2);
+          temp_elem = list_begin(&ready_list2);
         }else{
           temp_elem = list_next(temp_elem);
         }
@@ -261,7 +261,7 @@ thread_tick (void)
           list_push_back(&ready_list2, &temp_thread.elem); //queue0에 넣어줌
           temp_thread->age = 0;
           temp_thread->priority = 2;
-          temp_elem = list_begin(ready_list3);
+          temp_elem = list_begin(&ready_list3);
         }else{
           temp_elem = list_next(temp_elem);
         }
@@ -279,7 +279,7 @@ thread_tick (void)
           list_push_back(&ready_list2, &temp_thread.elem); //queue0에 넣어줌
           temp_thread->age = 0;
           temp_thread->priority = 2;
-          temp_elem = list_begin(ready_list3);
+          temp_elem = list_begin(&ready_list3);
         }else{
           temp_elem = list_next(temp_elem);
         }
@@ -731,13 +731,13 @@ next_thread_to_run (void)
   //  return list_entry (list_pop_front (&ready_list), struct thread, elem);\
 
   //multi level queue
-  if(!list_empty(ready_list0)){
+  if(!list_empty(&ready_list0)){
     return list_entry(list_pop_front(&ready_list0, struct thread, elem));
-  }else if(!list_empty(ready_list1)){
+  }else if(!list_empty(&ready_list1)){
     return list_entry(list_pop_front(&ready_list1, struct thread, elem));
-  }else if(!list_empty(ready_list2)){
+  }else if(!list_empty(&ready_list2)){
     return list_entry(list_pop_front(&ready_list2, struct thread, elem));
-  }else if(!list_empty(ready_list3)){
+  }else if(!list_empty(&ready_list3)){
     return list_entry(list_pop_front(&ready_list3, struct thread, elem));
   }else{
     return idle_thread;
