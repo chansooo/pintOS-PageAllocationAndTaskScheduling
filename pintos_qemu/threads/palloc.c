@@ -63,20 +63,21 @@ palloc_init (size_t user_page_limit)
 }
 
 size_t get_page_idx(struct bitmap *b, size_t start, size_t cnt, bool value){
-    int size_val = 1;
+    int size = 1;
     int idx = 0;
-    while(cnt > size_val){  //맞는 size찾도록.
-      size_val = size_val * 2;
+    while(cnt > size){  //맞는 size찾도록.
+      size = size * 2;
     }
     while(idx <= bitmap_size(b)){
-      if(!bitmap_contains(b, idx, size_val, !value)){
-        bitmap_set_multiple(b,idx,size_val,!value);
+      if(!bitmap_contains(b, idx, size, !value)){
+        bitmap_set_multiple(b,idx,size,!value);
         return idx;
       }
-      else{ //size만큼 인덱스를 옮기고 다시 확인
-        idx += size_val;
-      }
+      
+      idx += size;
+      
     }
+    
     return BITMAP_ERROR;
 }
 /* Obtains and returns a group of PAGE_CNT contiguous free pages.
@@ -156,7 +157,7 @@ palloc_free_multiple (void *pages, size_t page_cnt)
   
   //buddy에 맞는 사이즈에 넣어주기
   int size = 1;
-  while(size >= page_cnt){
+  while(size < page_cnt){
     size = size * 2;
   }
   page_cnt = size;
@@ -221,7 +222,7 @@ palloc_get_status (enum palloc_flags flags)
   printf("Page Count : %d\n", kernel_size);
 
   
-  for (int i = 1; i <= 32; i++) //! 1~32까지 출력.(01 02 03 04)
+  for (int i = 1; i <= 32; i++) 
   {
     if (i < 10)
     {
