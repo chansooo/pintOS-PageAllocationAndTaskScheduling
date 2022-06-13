@@ -62,7 +62,7 @@ palloc_init (size_t user_page_limit)
              user_pages, "user pool");
 }
 
-size_t get_page_idx(sturct bitmap *b, size_t start, size_t cnt, bool value){
+size_t get_page_idx(struct bitmap *b, size_t start, size_t cnt, bool value){
     int size_val = 1;
     int idx = 0;
     while(cnt >= size_val){  //맞는 size찾도록.
@@ -220,7 +220,7 @@ palloc_get_status (enum palloc_flags flags)
   size_t kernel_size = bitmap_size(kernel_bitmap);
   printf("Page Count : %d\n", kernel_size);
   int loop_num = kernel_size / 32;
-  for (int i = 1; i <= 32; i++) //! 1~32까지 출력.(01 02 03 04)
+  for (int i = 1; i <= 32; i++) 
   {
     if (i < 10)
     {
@@ -243,4 +243,3 @@ palloc_get_status (enum palloc_flags flags)
   }
 
 }
-
