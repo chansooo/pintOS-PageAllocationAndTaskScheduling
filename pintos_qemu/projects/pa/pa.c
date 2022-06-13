@@ -13,6 +13,9 @@ void run_patest(char **argv)
     /// TODO: make your own test
     
     palloc_get_status(0);
+    void a = palloc_get_multiple(0, 64);
+
+    void b = palloc_get_multiple(0, 63);
 
     while (1) {
         timer_msleep(1000);
