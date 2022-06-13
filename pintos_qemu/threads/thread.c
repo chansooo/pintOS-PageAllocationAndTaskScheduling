@@ -526,8 +526,6 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
   if (cur != idle_thread){
     if(t->priority == 0){
       cur->priority = cur->priority +1;
