@@ -22,7 +22,11 @@
 
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
-static struct list ready_list;
+static struct list ready_list0;
+static struct list ready_list1;
+static struct list ready_list2;
+static struct list ready_list3;
+int cur_queue;
 
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
@@ -57,6 +61,11 @@ static long long user_ticks;    /* # of timer ticks in user programs. */
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
 static unsigned thread_ticks;   /* # of timer ticks since last yield. */
+
+#define TIME_SLICE_0 4
+#define TIME_SLICE_1 5
+#define TIME_SLICE_2 6
+#define TIME_SLICE_3 7
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -94,15 +103,22 @@ thread_init (void)
   ASSERT (intr_get_level () == INTR_OFF);
 
   lock_init (&tid_lock);
-  list_init (&ready_list);
+  list_init (&ready_list0);
+  list_init (&ready_list1);
+  list_init (&ready_list2);
+  list_init (&ready_list3);
   list_init (&all_list);
-  list_init (&sleep_list);
+
+  
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+  
+  //initial_thread->age = 0;
+  cur_queue = 0;
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -124,6 +140,8 @@ thread_start (void)
 
 /* Called by the timer interrupt handler at each timer tick.
    Thus, this function runs in an external interrupt context. */
+   //
+  //고정된 timeslice -> 각 큐 timeslice따라서 다르게
 void
 thread_tick (void) 
 {
@@ -140,8 +158,134 @@ thread_tick (void)
     kernel_ticks++;
 
   /* Enforce preemption. */
-  if (++thread_ticks >= TIME_SLICE)
-    intr_yield_on_return ();
+  //기존의 동일한 timeslice로 처리하는 코드
+  //if (++thread_ticks >= TIME_SLICE)
+  //  intr_yield_on_return ();
+  
+  if(cur_queue == 0){ //thread_ticks가 timeslice보다 크면 intr_yield_on_return
+    if(++thread_ticks >= TIME_SLICE_0){
+      intr_yield_on_return();
+    }
+  }else if(cur_queue == 1){
+    if(++thread_ticks >= TIME_SLICE_1){
+      intr_yield_on_return();
+    }
+  }else if(cur_queue == 2){
+    if(++thread_ticks >= TIME_SLICE_2){
+      intr_yield_on_return();
+    }
+  }else if(cur_queue == 3){
+    if(++thread_ticks >= TIME_SLICE_3){
+      intr_yield_on_return();
+    }
+  }
+
+  //aging 
+  //20 이상 기다렸으면 상위 큐로 넣어주기
+  struct list_elem *temp_elem;
+  struct thread *temp_thread;
+  if(cur_queue == 0){
+    if(++thread_ticks >= TIME_SLICE_0){ //timeslice 충족
+    //TODO: 한 단계 낮은 큐 뿐만 아니라 낮은 모든 큐에 대해서 aging검사
+    //readylist1에서 0으로 올라올 수 있는 스레드 올려주기
+      //readylist1->readylist0 체크
+      temp_elem = list_begin(&ready_list1);
+      while(temp_elem != list_end(&ready_list1)||list_empty(&ready_list1)){
+        temp_thread = list_entry(temp_elem, struct thread, elem);
+        temp_thread->age++;
+        if(t->age >= 20){
+          list_pop_front(&ready_list1); //queue1에 있는 거 꺼내고
+          list_push_back(&ready_list0, &temp_thread.elem); //queue0에 넣어줌
+          temp_thread->age = 0;
+          temp_thread->priority = 0;
+          temp_elem = list_begin(ready_list1);
+        }else{
+          temp_elem = list_next(temp_elem);
+        }
+      }
+      //readylist2->readylist1 체크
+      temp_elem = list_begin(&ready_list2);
+      while(temp_elem != list_end(&ready_list2)||list_empty(&ready_list2)){
+        temp_thread = list_entry(temp_elem, struct thread, elem);
+        temp_thread->age++;
+        if(t->age >= 20){
+          list_pop_front(&ready_list2); //queue2에 있는 거 꺼내고
+          list_push_back(&ready_list1, &temp_thread.elem); //queue1에 넣어줌
+          temp_thread->age = 0;
+          temp_thread->priority = 1;
+          temp_elem = list_begin(ready_list2);
+        }else{
+          temp_elem = list_next(temp_elem);
+        }
+      }
+      //readylist3->readylist2 체크
+      temp_elem = list_begin(&ready_list3);
+      while(temp_elem != list_end(&ready_list3)||list_empty(&ready_list3)){
+        temp_thread = list_entry(temp_elem, struct thread, elem);
+        temp_thread->age++;
+        if(t->age >= 20){
+          list_pop_front(&ready_list3); //queue1에 있는 거 꺼내고
+          list_push_back(&ready_list2, &temp_thread.elem); //queue0에 넣어줌
+          temp_thread->age = 0;
+          temp_thread->priority = 2;
+          temp_elem = list_begin(ready_list3);
+        }else{
+          temp_elem = list_next(temp_elem);
+        }
+      }
+    }
+  }else if(cur_queue == 1){
+    if(++thread_ticks >= TIME_SLICE_1){
+            //readylist2->readylist1 체크
+      temp_elem = list_begin(&ready_list2);
+      while(temp_elem != list_end(&ready_list2)||list_empty(&ready_list2)){
+        temp_thread = list_entry(temp_elem, struct thread, elem);
+        temp_thread->age++;
+        if(t->age >= 20){
+          list_pop_front(&ready_list2); //queue2에 있는 거 꺼내고
+          list_push_back(&ready_list1, &temp_thread.elem); //queue1에 넣어줌
+          temp_thread->age = 0;
+          temp_thread->priority = 0;
+          temp_elem = list_begin(ready_list2);
+        }else{
+          temp_elem = list_next(temp_elem);
+        }
+      }
+      //readylist3->readylist2 체크
+      temp_elem = list_begin(&ready_list3);
+      while(temp_elem != list_end(&ready_list3)||list_empty(&ready_list3)){
+        temp_thread = list_entry(temp_elem, struct thread, elem);
+        temp_thread->age++;
+        if(t->age >= 20){
+          list_pop_front(&ready_list3); //queue1에 있는 거 꺼내고
+          list_push_back(&ready_list2, &temp_thread.elem); //queue0에 넣어줌
+          temp_thread->age = 0;
+          temp_thread->priority = 2;
+          temp_elem = list_begin(ready_list3);
+        }else{
+          temp_elem = list_next(temp_elem);
+        }
+      }
+    }
+  }else if(cur_queue == 2){
+    if(++thread_ticks >= TIME_SLICE_2){
+      //readylist3->readylist2 체크
+      temp_elem = list_begin(&ready_list3);
+      while(temp_elem != list_end(&ready_list3)||list_empty(&ready_list3)){
+        temp_thread = list_entry(temp_elem, struct thread, elem);
+        temp_thread->age++;
+        if(t->age >= 20){
+          list_pop_front(&ready_list3); //queue1에 있는 거 꺼내고
+          list_push_back(&ready_list2, &temp_thread.elem); //queue0에 넣어줌
+          temp_thread->age = 0;
+          temp_thread->priority = 2;
+          temp_elem = list_begin(ready_list3);
+        }else{
+          temp_elem = list_next(temp_elem);
+        }
+      }
+    }
+  }
 }
 
 /* Prints thread statistics. */
@@ -187,7 +331,7 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
-
+  t->age = 0;
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
   kf->eip = NULL;
@@ -242,11 +386,21 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+
+  if(t->priority == 0){
+    list_push_back(&ready_list0, &t->elem);
+  }else if(t->priority == 1){
+    list_push_back(&ready_list1, &t->elem);
+  }else if(t->priority == 2){
+    list_push_back(&ready_list2, &t->elem);
+  }else if(t->priority == 3){
+    list_push_back(&ready_list3, &t->elem);
+  }
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
 
+//과제 위해 추가되어있는 코드
 static void
 update_next_tick_to_wakeup (int64_t tick)
 {
@@ -360,6 +514,9 @@ thread_exit (void)
 
 /* Yields the CPU.  The current thread is not put to sleep and
    may be scheduled again immediately at the scheduler's whim. */
+   
+   //TODO: 각각의 list들 분기 처리
+
 void
 thread_yield (void) 
 {
@@ -549,13 +706,29 @@ alloc_frame (struct thread *t, size_t size)
    empty.  (If the running thread can continue running, then it
    will be in the run queue.)  If the run queue is empty, return
    idle_thread. */
+
+//다음 스레드를 선정하는 메소드
 static struct thread *
 next_thread_to_run (void) 
 {
-  if (list_empty (&ready_list))
+  //라운드 로빈
+  //if (list_empty (&ready_list))
+  //  return idle_thread;
+  //else
+  //  return list_entry (list_pop_front (&ready_list), struct thread, elem);\
+
+  //multi level queue
+  if(!list_empty(ready_list0)){
+    return list_entry(list_pop_front(&ready_list0, struct thread, elem));
+  }else if(!list_empty(ready_list1)){
+    return list_entry(list_pop_front(&ready_list1, struct thread, elem));
+  }else if(!list_empty(ready_list2)){
+    return list_entry(list_pop_front(&ready_list2, struct thread, elem));
+  }else if(!list_empty(ready_list3)){
+    return list_entry(list_pop_front(&ready_list3, struct thread, elem));
+  }else{
     return idle_thread;
-  else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  }
 }
 
 /* Completes a thread switch by activating the new thread's page

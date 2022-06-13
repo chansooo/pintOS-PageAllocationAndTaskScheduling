@@ -85,6 +85,16 @@ palloc_init (size_t user_page_limit)
    then the pages are filled with zeros.  If too few pages are
    available, returns a null pointer, unless PAL_ASSERT is set in
    FLAGS, in which case the kernel panics. */
+//2^n에서 buddy의 공간을 최적으로 사용하는 크기 return
+size_t
+find_power_of_two(size_t b){
+  for(size_t i=0;;i++){
+    //2의 i승이 temp보다 크다면 해당 i 반환
+    if(b <= pow(2,i)){ 
+      return i;
+    }
+  }
+}
    //연속된 페이지 할당
 void *
 palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
