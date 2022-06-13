@@ -64,8 +64,8 @@ palloc_init (size_t user_page_limit)
 
 size_t get_page_idx(sturct bitmap *b, size_t start, size_t cnt, bool value){
     int size_val = 1;
-    int idx = 0;//inx는 0부터 시작해서 할당가능한지 여부를 판단.
-    while(cnt > size_val){ //cnt가 2의 진수보다 클때까지 2를 곱해버려
+    int idx = 0;
+    while(cnt >= size_val){  //맞는 size찾도록.
       size_val = size_val * 2;
     }
     while(idx <= bitmap_size(b)){
