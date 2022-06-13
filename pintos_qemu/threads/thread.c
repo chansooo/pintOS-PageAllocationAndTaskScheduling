@@ -1,447 +1,832 @@
-#include "threads/palloc.h"
-#include <bitmap.h>
+#include "threads/thread.h"
 #include <debug.h>
-#include <inttypes.h>
-#include <round.h>
 #include <stddef.h>
-#include <stdint.h>
+#include <random.h>
 #include <stdio.h>
 #include <string.h>
-#include "threads/loader.h"
+#include "threads/flags.h"
+#include "threads/interrupt.h"
+#include "threads/intr-stubs.h"
+#include "threads/palloc.h"
+#include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
-
-/* Page allocator.  Hands out memory in page-size (or
-   page-multiple) chunks.  See malloc.h for an allocator that
-   hands out smaller chunks.
-
-   System memory is divided into two "pools" called the kernel
-   and user pools.  The user pool is for user (virtual) memory
-   pages, the kernel pool for everything else.  The idea here is
-   that the kernel needs to have memory for its own operations
-   even if user processes are swapping like mad.
-
-   By default, half of system RAM is given to the kernel pool and
-   half to the user pool.  That should be huge overkill for the
-   kernel pool, but that's just fine for demonstration purposes. */
-
-/* A memory pool. */
-struct pool
-  {
-    struct lock lock;                   /* Mutual exclusion. */
-    struct bitmap *used_map;            /* Bitmap of free pages. */
-    uint8_t *base;                      /* Base of pool. */
-  };
-
-struct block 
-{
-  size_t idx;
-  struct list_elem elem; //list elem이 구조체 내부에 있으면 밖에 있는 idx는 어떻게 읽을 수 있을까
-
-};
-
-
-//찬수가 한 거~
-//list 8개로 만들자!
-struct list block_list[9];
-//block_list가 block들을 가지게 되면 값을 볼 수가 없다..........
-//list를 가지는 구조체를 만들고......
-
-
-
-//2^n에서 buddy의 공간을 최적으로 사용하는 크기 return
-size_t next_power_of_2(size_t size)
-{
-    /* depend on the fact that size < 2^32 */
-  int i =1;
-  while(true){
-    if(size < i){
-      return i;
-    }
-    i = i * 2;
-  }
-  return i
-}
-
-size_t pow(size_t num, size_t n){
-  for(int i =0; i < n; i++){
-    num = num * 2;
-  }
-  return num;
-}
-
-   //연속된 페이지 할당
-void *
-palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
-{
-  struct pool *pool = flags & PAL_USER ? &user_pool : &kernel_pool;
-  void *pages;
-  size_t page_idx;
-
-  if (page_cnt == 0)
-    return NULL;
-  struct block *b;
-  struct list_elem = *temp_elem;
-  lock_acquire (&pool->lock);
-  //여기를 바꾸자
-  for(int i=0; i<9;i++){ //2^8 = 256까지만 고려?
-    
-    //쓸 수 있는 블록 있는데 
-    if(!list_empty(block_list[i])){ //쓸 수 있는 block이 있으면
-      if(find_power_of_two(page_cnt) <= pow(2,i)){ //그 block에 page가 들어갈 수 있으면      
-        b = list_entry(list_pop_front(&block_list[i], struct block, elem));
-        if(i == 1 || find_power_of_two(page_cnt) > pow(2,i-1)){ //딱 맞으면 그대로 할당
-
-        } else{ // 들어가긴 하는데 너무 과분하면
-          struct block *b2; //여기에 선언하면 사라지나?
-          b2->idx = b->idx + pow(2,(i-1)); // +1해줘야하나?
-          list_push_back(&block_list[i], &b2->elem);
-        }
-        page_idx = b->idx;
-      }
-    }
-  }
-  lock_release (&pool->lock);
-
-  if (page_idx != BITMAP_ERROR)
-    pages = pool->base + page_idx; //pool + block의 인덱스로 넘겨주기
-  else
-    pages = NULL;
-
-  if (pages != NULL) 
-    {
-      if (flags & PAL_ZERO)
-        memset (pages, 0, PGSIZE * page_cnt);
-    }
-  else 
-    {
-      if (flags & PAL_ASSERT)
-        PANIC ("palloc_get: out of pages");
-    }
-
-  return pages;
-}
-
-/* Frees the PAGE_CNT pages starting at PAGES. */
-void
-palloc_free_multiple (void *pages, size_t page_cnt) 
-{
-  struct pool *pool;
-  size_t page_idx;
-
-  ASSERT (pg_ofs (pages) == 0);
-  if (pages == NULL || page_cnt == 0)
-    return;
-
-  if (page_from_pool (&kernel_pool, pages))
-    pool = &kernel_pool;
-  else if (page_from_pool (&user_pool, pages))
-    pool = &user_pool;
-  else
-    NOT_REACHED ();
-
-  page_idx = pg_no (pages) - pg_no (pool->base);
-
-#ifndef NDEBUG
-  memset (pages, 0xcc, PGSIZE * page_cnt);
+#ifdef USERPROG
+#include "userprog/process.h"
 #endif
 
-  ASSERT (bitmap_all (pool->used_map, page_idx, page_cnt));
-  //여기를 바꾸자
-  struct block *b;
-  struct list_elem *temp_elem; //방금
-  size_t temp = find_power_of_two(page_cnt);
-  size_t idx_temp;
+/* Random value for struct thread's `magic' member.
+   Used to detect stack overflow.  See the big comment at the top
+   of thread.h for details. */
+#define THREAD_MAGIC 0xcd6abf4b
+
+/* List of processes in THREAD_READY state, that is, processes
+   that are ready to run but not actually running. */
+static struct list ready_list0;
+static struct list ready_list1;
+static struct list ready_list2;
+static struct list ready_list3;
+int cur_queue;
+
+/* List of all processes.  Processes are added to this list
+   when they are first scheduled and removed when they exit. */
+static struct list all_list;
+
+/* List of process in sleep */
+static struct list sleep_list;
+static int64_t next_tick_to_wakeup = INT64_MAX;
+
+/* Idle thread. */
+static struct thread *idle_thread;
+
+/* Initial thread, the thread running init.c:main(). */
+static struct thread *initial_thread;
+
+/* Lock used by allocate_tid(). */
+static struct lock tid_lock;
+
+/* Stack frame for kernel_thread(). */
+struct kernel_thread_frame 
+  {
+    void *eip;                  /* Return address. */
+    thread_func *function;      /* Function to call. */
+    void *aux;                  /* Auxiliary data for function. */
+  };
+
+/* Statistics. */
+static long long idle_ticks;    /* # of timer ticks spent idle. */
+static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
+static long long user_ticks;    /* # of timer ticks in user programs. */
+
+/* Scheduling. */
+#define TIME_SLICE 4            /* # of timer ticks to give each thread. */
+static unsigned thread_ticks;   /* # of timer ticks since last yield. */
+
+#define TIME_SLICE_0 4
+#define TIME_SLICE_1 5
+#define TIME_SLICE_2 6
+#define TIME_SLICE_3 7
+
+/* If false (default), use round-robin scheduler.
+   If true, use multi-level feedback queue scheduler.
+   Controlled by kernel command-line option "-o mlfqs". */
+bool thread_mlfqs;
+
+static void kernel_thread (thread_func *, void *aux);
+
+static void idle (void *aux UNUSED);
+static struct thread *running_thread (void);
+static struct thread *next_thread_to_run (void);
+static void init_thread (struct thread *, const char *name, int priority);
+static bool is_thread (struct thread *) UNUSED;
+static void *alloc_frame (struct thread *, size_t size);
+static void schedule (void);
+void thread_schedule_tail (struct thread *prev);
+static tid_t allocate_tid (void);
+
+/* Initializes the threading system by transforming the code
+   that's currently running into a thread.  This can't work in
+   general and it is possible in this case only because loader.S
+   was careful to put the bottom of the stack at a page boundary.
+
+   Also initializes the run queue and the tid lock.
+
+   After calling this function, be sure to initialize the page
+   allocator before trying to create any threads with
+   thread_create().
+
+   It is not safe to call thread_current() until this function
+   finishes. */
+void
+thread_init (void) 
+{
+  ASSERT (intr_get_level () == INTR_OFF);
+
+  lock_init (&tid_lock);
+  list_init (&ready_list0);
+  list_init (&ready_list1);
+  list_init (&ready_list2);
+  list_init (&ready_list3);
+  list_init (&all_list);
+
   
-  for(int i=0; i<9; i++){
-  //page_cnt를 통해 할당한 페이지 개수 확인해서 temp에 저장  
 
-      //해당 block_list에 하나씩 꺼내서 idx가 같은지 확인하고 같으면 빠져나감
-      while(1){
-        b = list_entry(list_pop_front(&block_list[i], struct block, elem)); 
-        idx_temp = b->idx;
-        if(b->idx != page_idx){
-          list_push_back(&block_list[i], &b);
-          continue;
-        }
-        break;
-      }
-      //합칠 수 있는지 확인
-      //꺼낸 게 buddy라면 합칠 게 사용 중이니까 그대로 두기
-     
-      size_t size = list_size(&block_list[i]);
-      struct block *c;
+  /* Set up a thread structure for the running thread. */
+  initial_thread = running_thread ();
+  init_thread (initial_thread, "main", PRI_DEFAULT);
+  initial_thread->status = THREAD_RUNNING;
+  initial_thread->tid = allocate_tid ();
+  
+  //initial_thread->age = 0;
+  cur_queue = 0;
+}
 
-      //b가 buddy 중 앞에 있는 아이라면
-      if((b->idx / pow(2,i)) % 2 == 0 ){
-        while(size){ //blocklist에 버디 있는지 확인
-          c = list_entry(list_pop_front(&block_list[i], struct block, elem)); 
-          if(c->idx == (page_idx + pow(2,i))){
-            //버디 있으면 합치기
-            c->idx = page_idx;
-            list_push_back(&block_list[i+1], &c)
-            break;
-          }
-          list_push_back(&block_list[i], &c);
-          size--;
-        }
-      } else{
-        //b가 buddy 중 뒤에 있는 아이라면
-        while(size){ //blocklist에 버디 있는지 확인
-          c = list_entry(list_pop_front(&block_list[i]), struct block, elem); 
-          if(c->idx == (page_idx - pow(2,i))){
-            //버디 있으면 합치기
-            c->idx = page_idx - pow(2,i);
-            list_push_back(&block_list[i+1], &c);
-            break;
-          }
-          list_push_back(&block_list[i], &c);
-          size--;
+/* Starts preemptive thread scheduling by enabling interrupts.
+   Also creates the idle thread. */
+void
+thread_start (void) 
+{
+  /* Create the idle thread. */
+  struct semaphore idle_started;
+  sema_init (&idle_started, 0);
+  thread_create ("idle", PRI_MIN, idle, &idle_started);
+
+  /* Start preemptive thread scheduling. */
+  intr_enable ();
+
+  /* Wait for the idle thread to initialize idle_thread. */
+  sema_down (&idle_started);
+}
+
+/* Called by the timer interrupt handler at each timer tick.
+   Thus, this function runs in an external interrupt context. */
+   //
+  //고정된 timeslice -> 각 큐 timeslice따라서 다르게
+void
+thread_tick (void) 
+{
+  struct thread *t = thread_current ();
+
+  /* Update statistics. */
+  if (t == idle_thread)
+    idle_ticks++;
+#ifdef USERPROG
+  else if (t->pagedir != NULL)
+    user_ticks++;
+#endif
+  else
+    kernel_ticks++;
+
+  /* Enforce preemption. */
+  //기존의 동일한 timeslice로 처리하는 코드
+  //if (++thread_ticks >= TIME_SLICE)
+  //  intr_yield_on_return ();
+  
+  if(cur_queue == 0){ //thread_ticks가 timeslice보다 크면 intr_yield_on_return
+    if(++thread_ticks >= TIME_SLICE_0){
+      intr_yield_on_return();
+    }
+  }else if(cur_queue == 1){
+    if(++thread_ticks >= TIME_SLICE_1){
+      intr_yield_on_return();
+    }
+  }else if(cur_queue == 2){
+    if(++thread_ticks >= TIME_SLICE_2){
+      intr_yield_on_return();
+    }
+  }else if(cur_queue == 3){
+    if(++thread_ticks >= TIME_SLICE_3){
+      intr_yield_on_return();
+    }
+  }
+
+  //aging 
+  //20 이상 기다렸으면 상위 큐로 넣어주기
+  struct list_elem *temp_elem;
+  struct thread *temp_thread;
+  if(cur_queue == 0){
+    if(++thread_ticks >= TIME_SLICE_0){ //timeslice 충족
+    //TODO: 한 단계 낮은 큐 뿐만 아니라 낮은 모든 큐에 대해서 aging검사
+    //readylist1에서 0으로 올라올 수 있는 스레드 올려주기
+      //readylist1->readylist0 체크
+      temp_elem = list_begin(&ready_list1);
+      while(temp_elem != list_end(&ready_list1)||list_empty(&ready_list1)){
+        temp_thread = list_entry(temp_elem, struct thread, elem);
+        temp_thread->age++;
+        if(t->age >= 20){
+          list_pop_front(&ready_list1); //queue1에 있는 거 꺼내고
+          list_push_back(&ready_list0, &temp_thread.elem); //queue0에 넣어줌
+          temp_thread->age = 0;
+          temp_thread->priority = 0;
+          temp_elem = list_begin(ready_list1);
+        }else{
+          temp_elem = list_next(temp_elem);
         }
       }
-    
+      //readylist2->readylist1 체크
+      temp_elem = list_begin(&ready_list2);
+      while(temp_elem != list_end(&ready_list2)||list_empty(&ready_list2)){
+        temp_thread = list_entry(temp_elem, struct thread, elem);
+        temp_thread->age++;
+        if(t->age >= 20){
+          list_pop_front(&ready_list2); //queue2에 있는 거 꺼내고
+          list_push_back(&ready_list1, &temp_thread.elem); //queue1에 넣어줌
+          temp_thread->age = 0;
+          temp_thread->priority = 1;
+          temp_elem = list_begin(ready_list2);
+        }else{
+          temp_elem = list_next(temp_elem);
+        }
+      }
+      //readylist3->readylist2 체크
+      temp_elem = list_begin(&ready_list3);
+      while(temp_elem != list_end(&ready_list3)||list_empty(&ready_list3)){
+        temp_thread = list_entry(temp_elem, struct thread, elem);
+        temp_thread->age++;
+        if(t->age >= 20){
+          list_pop_front(&ready_list3); //queue1에 있는 거 꺼내고
+          list_push_back(&ready_list2, &temp_thread.elem); //queue0에 넣어줌
+          temp_thread->age = 0;
+          temp_thread->priority = 2;
+          temp_elem = list_begin(ready_list3);
+        }else{
+          temp_elem = list_next(temp_elem);
+        }
+      }
+    }
+  }else if(cur_queue == 1){
+    if(++thread_ticks >= TIME_SLICE_1){
+            //readylist2->readylist1 체크
+      temp_elem = list_begin(&ready_list2);
+      while(temp_elem != list_end(&ready_list2)||list_empty(&ready_list2)){
+        temp_thread = list_entry(temp_elem, struct thread, elem);
+        temp_thread->age++;
+        if(t->age >= 20){
+          list_pop_front(&ready_list2); //queue2에 있는 거 꺼내고
+          list_push_back(&ready_list1, &temp_thread.elem); //queue1에 넣어줌
+          temp_thread->age = 0;
+          temp_thread->priority = 0;
+          temp_elem = list_begin(ready_list2);
+        }else{
+          temp_elem = list_next(temp_elem);
+        }
+      }
+      //readylist3->readylist2 체크
+      temp_elem = list_begin(&ready_list3);
+      while(temp_elem != list_end(&ready_list3)||list_empty(&ready_list3)){
+        temp_thread = list_entry(temp_elem, struct thread, elem);
+        temp_thread->age++;
+        if(t->age >= 20){
+          list_pop_front(&ready_list3); //queue1에 있는 거 꺼내고
+          list_push_back(&ready_list2, &temp_thread.elem); //queue0에 넣어줌
+          temp_thread->age = 0;
+          temp_thread->priority = 2;
+          temp_elem = list_begin(ready_list3);
+        }else{
+          temp_elem = list_next(temp_elem);
+        }
+      }
+    }
+  }else if(cur_queue == 2){
+    if(++thread_ticks >= TIME_SLICE_2){
+      //readylist3->readylist2 체크
+      temp_elem = list_begin(&ready_list3);
+      while(temp_elem != list_end(&ready_list3)||list_empty(&ready_list3)){
+        temp_thread = list_entry(temp_elem, struct thread, elem);
+        temp_thread->age++;
+        if(t->age >= 20){
+          list_pop_front(&ready_list3); //queue1에 있는 거 꺼내고
+          list_push_back(&ready_list2, &temp_thread.elem); //queue0에 넣어줌
+          temp_thread->age = 0;
+          temp_thread->priority = 2;
+          temp_elem = list_begin(ready_list3);
+        }else{
+          temp_elem = list_next(temp_elem);
+        }
+      }
+    }
   }
 }
 
-/* Two pools: one for kernel data, one for user pages. */
-static struct pool kernel_pool, user_pool;
-
-static void init_pool (struct pool *, void *base, size_t page_cnt,
-                       const char *name);
-static bool page_from_pool (const struct pool *, void *page);
-
-/* Initializes the page allocator.  At most USER_PAGE_LIMIT
-   pages are put into the user pool. */
-//페이지 할당자 초기화 함수. 커널과 유저 페이지 나눠서 각자 할당
+/* Prints thread statistics. */
 void
-palloc_init (size_t user_page_limit)
+thread_print_stats (void) 
 {
-  /* Free memory starts at 1 MB and runs to the end of RAM. */
-  uint8_t *free_start = ptov (1024 * 1024);
-  uint8_t *free_end = ptov (init_ram_pages * PGSIZE);
-  size_t free_pages = (free_end - free_start) / PGSIZE;
-  size_t user_pages = free_pages / 2;
-  size_t kernel_pages;
-  if (user_pages > user_page_limit)
-    user_pages = user_page_limit;
-  kernel_pages = free_pages - user_pages;
-
-  /* Give half of memory to kernel, half to user. */
-  init_pool (&kernel_pool, free_start, kernel_pages, "kernel pool");
-  init_pool (&user_pool, free_start + kernel_pages * PGSIZE,
-             user_pages, "user pool");
-  
+  printf ("Thread: %lld idle ticks, %lld kernel ticks, %lld user ticks\n",
+          idle_ticks, kernel_ticks, user_ticks);
 }
 
-/* Obtains and returns a group of PAGE_CNT contiguous free pages.
-   If PAL_USER is set, the pages are obtained from the user pool,
-   otherwise from the kernel pool.  If PAL_ZERO is set in FLAGS,
-   then the pages are filled with zeros.  If too few pages are
-   available, returns a null pointer, unless PAL_ASSERT is set in
-   FLAGS, in which case the kernel panics. */
-   //연속된 페이지 할당
-// void *
-// palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
-// {
-//   struct pool *pool = flags & PAL_USER ? &user_pool : &kernel_pool;
-//   void *pages;
-//   size_t page_idx;
+/* Creates a new kernel thread named NAME with the given initial
+   PRIORITY, which executes FUNCTION passing AUX as the argument,
+   and adds it to the ready queue.  Returns the thread identifier
+   for the new thread, or TID_ERROR if creation fails.
 
-//   if (page_cnt == 0)
-//     return NULL;
+   If thread_start() has been called, then the new thread may be
+   scheduled before thread_create() returns.  It could even exit
+   before thread_create() returns.  Contrariwise, the original
+   thread may run for any amount of time before the new thread is
+   scheduled.  Use a semaphore or some other form of
+   synchronization if you need to ensure ordering.
 
-//   lock_acquire (&pool->lock);
-//   //여기를 바꾸자
-//   page_idx = bitmap_scan_and_flip (pool->used_map, 0, page_cnt, false);
-//   lock_release (&pool->lock);
-
-//   if (page_idx != BITMAP_ERROR)
-//     pages = pool->base + PGSIZE * page_idx;
-//    // pages = pool->base + 버디블록베이스(메모리 주소)
-//   else
-//     pages = NULL;
-
-//   if (pages != NULL) 
-//     {
-//       if (flags & PAL_ZERO)
-//         memset (pages, 0, PGSIZE * page_cnt);
-//     }
-//   else 
-//     {
-//       if (flags & PAL_ASSERT)
-//         PANIC ("palloc_get: out of pages");
-//     }
-
-//   return pages;
-// }
-
-/* Obtains a single free page and returns its kernel virtual
-   address.
-   If PAL_USER is set, the page is obtained from the user pool,
-   otherwise from the kernel pool.  If PAL_ZERO is set in FLAGS,
-   then the page is filled with zeros.  If no pages are
-   available, returns a null pointer, unless PAL_ASSERT is set in
-   FLAGS, in which case the kernel panics. */
-   //단일 페이지 할당
-void *
-palloc_get_page (enum palloc_flags flags) 
+   The code provided sets the new thread's `priority' member to
+   PRIORITY, but no actual priority scheduling is implemented.
+   Priority scheduling is the goal of Problem 1-3. */
+tid_t
+thread_create (const char *name, int priority,
+               thread_func *function, void *aux) 
 {
-  return palloc_get_multiple (flags, 1);
+  struct thread *t;
+  struct kernel_thread_frame *kf;
+  struct switch_entry_frame *ef;
+  struct switch_threads_frame *sf;
+  tid_t tid;
+
+  ASSERT (function != NULL);
+
+  /* Allocate thread. */
+  t = palloc_get_page (PAL_ZERO);
+  if (t == NULL)
+    return TID_ERROR;
+
+  /* Initialize thread. */
+  init_thread (t, name, priority);
+  tid = t->tid = allocate_tid ();
+  t->age = 0;
+  /* Stack frame for kernel_thread(). */
+  kf = alloc_frame (t, sizeof *kf);
+  kf->eip = NULL;
+  kf->function = function;
+  kf->aux = aux;
+
+  /* Stack frame for switch_entry(). */
+  ef = alloc_frame (t, sizeof *ef);
+  ef->eip = (void (*) (void)) kernel_thread;
+
+  /* Stack frame for switch_threads(). */
+  sf = alloc_frame (t, sizeof *sf);
+  sf->eip = switch_entry;
+  sf->ebp = 0;
+
+  /* Add to run queue. */
+  thread_unblock (t);
+
+  return tid;
 }
 
-// /* Frees the PAGE_CNT pages starting at PAGES. */
-// void
-// palloc_free_multiple (void *pages, size_t page_cnt) 
-// {
-//   struct pool *pool;
-//   size_t page_idx;
+/* Puts the current thread to sleep.  It will not be scheduled
+   again until awoken by thread_unblock().
 
-//   ASSERT (pg_ofs (pages) == 0);
-//   if (pages == NULL || page_cnt == 0)
-//     return;
-
-//   if (page_from_pool (&kernel_pool, pages))
-//     pool = &kernel_pool;
-//   else if (page_from_pool (&user_pool, pages))
-//     pool = &user_pool;
-//   else
-//     NOT_REACHED ();
-
-//   page_idx = pg_no (pages) - pg_no (pool->base);
-
-// #ifndef NDEBUG
-//   memset (pages, 0xcc, PGSIZE * page_cnt);
-// #endif
-
-//   ASSERT (bitmap_all (pool->used_map, page_idx, page_cnt));
-//   //여기를 바꾸자
-//   bitmap_set_multiple (pool->used_map, page_idx, page_cnt, false);
-// }
-
-/* Frees the page at PAGE. */
+   This function must be called with interrupts turned off.  It
+   is usually a better idea to use one of the synchronization
+   primitives in synch.h. */
 void
-palloc_free_page (void *page) 
+thread_block (void) 
 {
-  palloc_free_multiple (page, 1);
+  ASSERT (!intr_context ());
+  ASSERT (intr_get_level () == INTR_OFF);
+
+  thread_current ()->status = THREAD_BLOCKED;
+  schedule ();
 }
 
-/* Initializes pool P as starting at START and ending at END,
-   naming it NAME for debugging purposes. */
+/* Transitions a blocked thread T to the ready-to-run state.
+   This is an error if T is not blocked.  (Use thread_yield() to
+   make the running thread ready.)
+
+   This function does not preempt the running thread.  This can
+   be important: if the caller had disabled interrupts itself,
+   it may expect that it can atomically unblock a thread and
+   update other data. */
+void
+thread_unblock (struct thread *t) 
+{
+  enum intr_level old_level;
+
+  ASSERT (is_thread (t));
+
+  old_level = intr_disable ();
+  ASSERT (t->status == THREAD_BLOCKED);
+
+  if(t->priority == 0){
+    list_push_back(&ready_list0, &t->elem);
+  }else if(t->priority == 1){
+    list_push_back(&ready_list1, &t->elem);
+  }else if(t->priority == 2){
+    list_push_back(&ready_list2, &t->elem);
+  }else if(t->priority == 3){
+    list_push_back(&ready_list3, &t->elem);
+  }
+  t->status = THREAD_READY;
+  intr_set_level (old_level);
+}
+
+//과제 위해 추가되어있는 코드
 static void
-init_pool (struct pool *p, void *base, size_t page_cnt, const char *name) 
+update_next_tick_to_wakeup (int64_t tick)
 {
-  /* We'll put the pool's used_map at its base.
-     Calculate the space needed for the bitmap
-     and subtract it from the pool's size. */
-  size_t bm_pages = DIV_ROUND_UP (bitmap_buf_size (page_cnt), PGSIZE);
-  if (bm_pages > page_cnt)
-    PANIC ("Not enough memory in %s for bitmap.", name);
-  page_cnt -= bm_pages;
-
-  printf ("%zu pages available in %s.\n", page_cnt, name);
-
-  /* Initialize the pool. */
-  lock_init (&p->lock);
-  p->used_map = bitmap_create_in_buf (page_cnt, base, bm_pages * PGSIZE);
-  p->base = base + bm_pages * PGSIZE;
-
-
-
-  //리스트 초기화
-  for(int i=0; i<9; i++){
-    list_init(&block_list[i]);
-  }
-
-  struct block *first_block;
-  first_block->idx = 0;
-
-  list_push_back(&block_list[8], first_block->elem);
+  next_tick_to_wakeup = 
+    (next_tick_to_wakeup > tick) ? tick : next_tick_to_wakeup;
 }
 
-/* Returns true if PAGE was allocated from POOL,
-   false otherwise. */
-static bool
-page_from_pool (const struct pool *pool, void *page) 
+int64_t
+get_next_tick_to_wakeup (void)
 {
-  size_t page_no = pg_no (page);
-  size_t start_page = pg_no (pool->base);
-  size_t end_page = start_page + bitmap_size (pool->used_map);
-
-  return page_no >= start_page && page_no < end_page;
+  return next_tick_to_wakeup;
 }
 
-/* Obtains a status of the page pool */
+/* Wakes up this thread after ticks */
 void
-palloc_get_status (enum palloc_flags flags)
+thread_sleep (int64_t tick)
 {
-  //IMPLEMENT THIS
-  //PAGE STATUS 0 if FREE, 1 if USED
-  //32 PAGE STATUS PER LINE
+  struct thread *cur;
+  enum intr_level old_level;
+
+  old_level = intr_disable ();
+  cur = thread_current ();
+
+  ASSERT (cur != idle_thread);
+
+  update_next_tick_to_wakeup (cur->wakeup_tick = tick);
+  list_push_back (&sleep_list, &cur->elem);
+
+  thread_block ();
+
+  intr_set_level (old_level);
 }
 
-//-----------------------------------------------
-// typedef unsigned long elem_type;
+void
+thread_wakeup (int64_t current_tick)
+{
+  struct list_elem *e;
 
-// struct bitmap
-//   {
-//     size_t bit_cnt;     /* Number of bits. */
-//     elem_type *bits;    /* Elements that represent bits. */
-//   };
+  next_tick_to_wakeup = INT64_MAX;
 
+  e = list_begin (&sleep_list);
+  while (e != list_end (&sleep_list))
+    {
+      struct thread *t = list_entry (e, struct thread, elem);
+      if (current_tick >= t->wakeup_tick)
+        {
+          e = list_remove (&t->elem);
+          thread_unblock (t);
+        }
+      else
+        {
+          e = list_next (e);
+          update_next_tick_to_wakeup (t->wakeup_tick);
+        }
+    }
+}
 
+/* Returns the name of the running thread. */
+const char *
+thread_name (void) 
+{
+  return thread_current ()->name;
+}
 
-
-// // size_t
-// // bitmap_scan_and_flip (struct bitmap *b, size_t start, size_t cnt, bool value)
-// // {
-// //   size_t idx = bitmap_scan (b, start, cnt, value);
-// //   if (idx != BITMAP_ERROR) 
-// //     bitmap_set_multiple (b, idx, cnt, !value);
-// //   return idx;
-// // }
-
-// /* Finds and returns the starting index of the first group of CNT
-//    consecutive bits in B at or after START that are all set to
-//    VALUE.
-//    If there is no such group, returns BITMAP_ERROR. */
-//    //들어갈 곳 찾는 주요 로직
-// size_t
-// bitmap_scan (const struct bitmap *b, size_t start, size_t cnt, bool value) 
-// {
-//   ASSERT (b != NULL);
-//   ASSERT (start <= b->bit_cnt);
-
-//   if (cnt <= b->bit_cnt) 
-//     {
-//       size_t last = b->bit_cnt - cnt;
-//       size_t i;
-//       for (i = start; i <= last; i++)
-//       //여기서 가능한 곳이 나오면 바로 return해버리는 것임
-//       //그러면 우리는! 바로 return 때리는 것이 아니라 빈 공간의 크기를 측정해서 2^n에 가장 가까운 index를 return해주면 된다
-//       //그러면 우리는! i를 찾았을 때 크기를 확인하고 temp에 저장한 다음  
-//       //이게 아니야
-//       //쪼개진 아이들을 생각해야해
-//       //할당해줄 때 
-//         if (!bitmap_contains (b, i, cnt, !value)) 
-//           return i; 
-//     }
-//   return BITMAP_ERROR;
-// }
-
-// /* Returns true if any bits in B between START and START + CNT,
-//    exclusive, are set to VALUE, and false otherwise. */
-//    //start~start+cnt까지 가능한 지점 있는지 확인
-// bool
-// bitmap_contains (const struct bitmap *b, size_t start, size_t cnt, bool value) 
-// {
-//   size_t i;
+/* Returns the running thread.
+   This is running_thread() plus a couple of sanity checks.
+   See the big comment at the top of thread.h for details. */
+struct thread *
+thread_current (void) 
+{
+  struct thread *t = running_thread ();
   
-//   ASSERT (b != NULL);
-//   ASSERT (start <= b->bit_cnt);
-//   ASSERT (start + cnt <= b->bit_cnt);
+  /* Make sure T is really a thread.
+     If either of these assertions fire, then your thread may
+     have overflowed its stack.  Each thread has less than 4 kB
+     of stack, so a few big automatic arrays or moderate
+     recursion can cause stack overflow. */
+  ASSERT (is_thread (t));
+  ASSERT (t->status == THREAD_RUNNING);
 
-//   for (i = 0; i < cnt; i++)
-//     if (bitmap_test (b, start + i) == value)
-//       return true;
-//   return false;
-// }
+  return t;
+}
+
+/* Returns the running thread's tid. */
+tid_t
+thread_tid (void) 
+{
+  return thread_current ()->tid;
+}
+
+/* Deschedules the current thread and destroys it.  Never
+   returns to the caller. */
+void
+thread_exit (void) 
+{
+  ASSERT (!intr_context ());
+
+#ifdef USERPROG
+  process_exit ();
+#endif
+
+  /* Remove thread from all threads list, set our status to dying,
+     and schedule another process.  That process will destroy us
+     when it calls thread_schedule_tail(). */
+  intr_disable ();
+  list_remove (&thread_current()->allelem);
+  thread_current ()->status = THREAD_DYING;
+  schedule ();
+  NOT_REACHED ();
+}
+
+/* Yields the CPU.  The current thread is not put to sleep and
+   may be scheduled again immediately at the scheduler's whim. */
+   
+   //TODO: 각각의 list들 분기 처리
+
+void
+thread_yield (void) 
+{
+  struct thread *cur = thread_current ();
+  enum intr_level old_level;
+  
+  ASSERT (!intr_context ());
+
+  old_level = intr_disable ();
+  if (cur != idle_thread){
+    if(t->priority == 0){
+      cur->priority = cur->priority +1;
+      list_push_back(&ready_list1, &t->elem);
+    }else if(t->priority == 1){
+      cur->priority = cur->priority +1;
+     list_push_back(&ready_list2, &t->elem);
+   }else if(t->priority == 2){
+     cur->priority = cur->priority +1;
+     list_push_back(&ready_list3, &t->elem);
+   }else if(t->priority == 3){
+      list_push_back(&ready_list3, &t->elem);
+    }
+  } 
+    
+  cur->status = THREAD_READY;
+  schedule ();
+  intr_set_level (old_level);
+}
+
+/* Invoke function 'func' on all threads, passing along 'aux'.
+   This function must be called with interrupts off. */
+void
+thread_foreach (thread_action_func *func, void *aux)
+{
+  struct list_elem *e;
+
+  ASSERT (intr_get_level () == INTR_OFF);
+
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      func (t, aux);
+    }
+}
+
+/* Sets the current thread's priority to NEW_PRIORITY. */
+void
+thread_set_priority (int new_priority) 
+{
+  thread_current ()->priority = new_priority;
+}
+
+/* Returns the current thread's priority. */
+int
+thread_get_priority (void) 
+{
+  return thread_current ()->priority;
+}
+
+/* Sets the current thread's nice value to NICE. */
+void
+thread_set_nice (int nice UNUSED) 
+{
+  /* Not yet implemented. */
+}
+
+/* Returns the current thread's nice value. */
+int
+thread_get_nice (void) 
+{
+  /* Not yet implemented. */
+  return 0;
+}
+
+/* Returns 100 times the system load average. */
+int
+thread_get_load_avg (void) 
+{
+  /* Not yet implemented. */
+  return 0;
+}
+
+/* Returns 100 times the current thread's recent_cpu value. */
+int
+thread_get_recent_cpu (void) 
+{
+  /* Not yet implemented. */
+  return 0;
+}
+
+/* Idle thread.  Executes when no other thread is ready to run.
+
+   The idle thread is initially put on the ready list by
+   thread_start().  It will be scheduled once initially, at which
+   point it initializes idle_thread, "up"s the semaphore passed
+   to it to enable thread_start() to continue, and immediately
+   blocks.  After that, the idle thread never appears in the
+   ready list.  It is returned by next_thread_to_run() as a
+   special case when the ready list is empty. */
+static void
+idle (void *idle_started_ UNUSED) 
+{
+  struct semaphore *idle_started = idle_started_;
+  idle_thread = thread_current ();
+  sema_up (idle_started);
+
+  for (;;) 
+    {
+      /* Let someone else run. */
+      intr_disable ();
+      thread_block ();
+
+      /* Re-enable interrupts and wait for the next one.
+
+         The `sti' instruction disables interrupts until the
+         completion of the next instruction, so these two
+         instructions are executed atomically.  This atomicity is
+         important; otherwise, an interrupt could be handled
+         between re-enabling interrupts and waiting for the next
+         one to occur, wasting as much as one clock tick worth of
+         time.
+
+         See [IA32-v2a] "HLT", [IA32-v2b] "STI", and [IA32-v3a]
+         7.11.1 "HLT Instruction". */
+      asm volatile ("sti; hlt" : : : "memory");
+    }
+}
+
+/* Function used as the basis for a kernel thread. */
+static void
+kernel_thread (thread_func *function, void *aux) 
+{
+  ASSERT (function != NULL);
+
+  intr_enable ();       /* The scheduler runs with interrupts off. */
+  function (aux);       /* Execute the thread function. */
+  thread_exit ();       /* If function() returns, kill the thread. */
+}
+
+/* Returns the running thread. */
+struct thread *
+running_thread (void) 
+{
+  uint32_t *esp;
+
+  /* Copy the CPU's stack pointer into `esp', and then round that
+     down to the start of a page.  Because `struct thread' is
+     always at the beginning of a page and the stack pointer is
+     somewhere in the middle, this locates the curent thread. */
+  asm ("mov %%esp, %0" : "=g" (esp));
+  return pg_round_down (esp);
+}
+
+/* Returns true if T appears to point to a valid thread. */
+static bool
+is_thread (struct thread *t)
+{
+  return t != NULL && t->magic == THREAD_MAGIC;
+}
+
+/* Does basic initialization of T as a blocked thread named
+   NAME. */
+static void
+init_thread (struct thread *t, const char *name, int priority)
+{
+  enum intr_level old_level;
+
+  ASSERT (t != NULL);
+  ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
+  ASSERT (name != NULL);
+
+  memset (t, 0, sizeof *t);
+  t->status = THREAD_BLOCKED;
+  strlcpy (t->name, name, sizeof t->name);
+  t->stack = (uint8_t *) t + PGSIZE;
+  t->priority = priority;
+  t->magic = THREAD_MAGIC;
+
+  old_level = intr_disable ();
+  list_push_back (&all_list, &t->allelem);
+  intr_set_level (old_level);
+}
+
+/* Allocates a SIZE-byte frame at the top of thread T's stack and
+   returns a pointer to the frame's base. */
+static void *
+alloc_frame (struct thread *t, size_t size) 
+{
+  /* Stack data is always allocated in word-size units. */
+  ASSERT (is_thread (t));
+  ASSERT (size % sizeof (uint32_t) == 0);
+
+  t->stack -= size;
+  return t->stack;
+}
+
+/* Chooses and returns the next thread to be scheduled.  Should
+   return a thread from the run queue, unless the run queue is
+   empty.  (If the running thread can continue running, then it
+   will be in the run queue.)  If the run queue is empty, return
+   idle_thread. */
+
+//다음 스레드를 선정하는 메소드
+static struct thread *
+next_thread_to_run (void) 
+{
+  //라운드 로빈
+  //if (list_empty (&ready_list))
+  //  return idle_thread;
+  //else
+  //  return list_entry (list_pop_front (&ready_list), struct thread, elem);\
+
+  //multi level queue
+  if(!list_empty(ready_list0)){
+    return list_entry(list_pop_front(&ready_list0, struct thread, elem));
+  }else if(!list_empty(ready_list1)){
+    return list_entry(list_pop_front(&ready_list1, struct thread, elem));
+  }else if(!list_empty(ready_list2)){
+    return list_entry(list_pop_front(&ready_list2, struct thread, elem));
+  }else if(!list_empty(ready_list3)){
+    return list_entry(list_pop_front(&ready_list3, struct thread, elem));
+  }else{
+    return idle_thread;
+  }
+}
+
+/* Completes a thread switch by activating the new thread's page
+   tables, and, if the previous thread is dying, destroying it.
+
+   At this function's invocation, we just switched from thread
+   PREV, the new thread is already running, and interrupts are
+   still disabled.  This function is normally invoked by
+   thread_schedule() as its final action before returning, but
+   the first time a thread is scheduled it is called by
+   switch_entry() (see switch.S).
+
+   It's not safe to call printf() until the thread switch is
+   complete.  In practice that means that printf()s should be
+   added at the end of the function.
+
+   After this function and its caller returns, the thread switch
+   is complete. */
+void
+thread_schedule_tail (struct thread *prev)
+{
+  struct thread *cur = running_thread ();
+  
+  ASSERT (intr_get_level () == INTR_OFF);
+
+  /* Mark us as running. */
+  cur->status = THREAD_RUNNING;
+
+  /* Start new time slice. */
+  thread_ticks = 0;
+
+#ifdef USERPROG
+  /* Activate the new address space. */
+  process_activate ();
+#endif
+
+  /* If the thread we switched from is dying, destroy its struct
+     thread.  This must happen late so that thread_exit() doesn't
+     pull out the rug under itself.  (We don't free
+     initial_thread because its memory was not obtained via
+     palloc().) */
+  if (prev != NULL && prev->status == THREAD_DYING && prev != initial_thread) 
+    {
+      ASSERT (prev != cur);
+      palloc_free_page (prev);
+    }
+}
+
+/* Schedules a new process.  At entry, interrupts must be off and
+   the running process's state must have been changed from
+   running to some other state.  This function finds another
+   thread to run and switches to it.
+
+   It's not safe to call printf() until thread_schedule_tail()
+   has completed. */
+static void
+schedule (void) 
+{
+  struct thread *cur = running_thread ();
+  struct thread *next = next_thread_to_run ();
+  struct thread *prev = NULL;
+
+  ASSERT (intr_get_level () == INTR_OFF);
+  ASSERT (cur->status != THREAD_RUNNING);
+  ASSERT (is_thread (next));
+
+  if (cur != next)
+    prev = switch_threads (cur, next);
+  thread_schedule_tail (prev);
+}
+
+/* Returns a tid to use for a new thread. */
+static tid_t
+allocate_tid (void) 
+{
+  static tid_t next_tid = 1;
+  tid_t tid;
+
+  lock_acquire (&tid_lock);
+  tid = next_tid++;
+  lock_release (&tid_lock);
+
+  return tid;
+}
+
+/* Offset of `stack' member within `struct thread'.
+   Used by switch.S, which can't figure it out on its own. */
+uint32_t thread_stack_ofs = offsetof (struct thread, stack);
