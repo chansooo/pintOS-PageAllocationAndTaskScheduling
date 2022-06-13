@@ -203,6 +203,25 @@ palloc_free_multiple (void *pages, size_t page_cnt)
 
   ASSERT (bitmap_all (pool->used_map, page_idx, page_cnt));
   bitmap_set_multiple (pool->used_map, page_idx, page_cnt, false);
+  //여기를 바꾸자
+  struct block *b;
+  struct list_elem *temp_elem; //방금
+  size_t temp = find_power_of_two(page_cnt);
+  size_t idx_temp;
+  
+  for(int i=0; i<8; i++){
+  //page_cnt를 통해 할당한 페이지 개수 확인해서 temp에 저장  
+
+      //해당 block_list에 하나씩 꺼내서 idx가 같은지 확인하고 같으면 빠져나감
+      while(1){
+        b = list_entry(list_pop_front(&block_list[i], struct block, elem)); 
+        idx_temp = b->idx;
+        if(b->idx != page_idx){
+          list_push_back(&block_list[i], &b);
+          continue;
+        }
+        break;
+      }
       //합칠 수 있는지 확인
       //꺼낸 게 buddy라면 합칠 게 사용 중이니까 그대로 두기
      
