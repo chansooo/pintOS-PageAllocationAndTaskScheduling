@@ -528,6 +528,21 @@ thread_yield (void)
   old_level = intr_disable ();
   if (cur != idle_thread) 
     list_push_back (&ready_list, &cur->elem);
+  if (cur != idle_thread){
+    if(t->priority == 0){
+      cur->priority = cur->priority +1;
+      list_push_back(&ready_list1, &t->elem);
+    }else if(t->priority == 1){
+      cur->priority = cur->priority +1;
+     list_push_back(&ready_list2, &t->elem);
+   }else if(t->priority == 2){
+     cur->priority = cur->priority +1;
+     list_push_back(&ready_list3, &t->elem);
+   }else if(t->priority == 3){
+      list_push_back(&ready_list3, &t->elem);
+    }
+  } 
+    
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
