@@ -1,3 +1,4 @@
+
 #include "threads/palloc.h"
 #include <bitmap.h>
 #include <debug.h>
@@ -10,6 +11,7 @@
 #include "threads/loader.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include <list.h>
 
 /* Page allocator.  Hands out memory in page-size (or
    page-multiple) chunks.  See malloc.h for an allocator that
@@ -36,8 +38,7 @@ struct pool
 /* Two pools: one for kernel data, one for user pages. */
 static struct pool kernel_pool, user_pool;
 
-static void init_pool (struct pool *, void *base, size_t page_cnt,
-                       const char *name);
+static void init_pool (struct pool *, void *base, size_t page_cnt,const char *name);
 static bool page_from_pool (const struct pool *, void *page);
 
 /* Initializes the page allocator.  At most USER_PAGE_LIMIT
@@ -61,6 +62,23 @@ palloc_init (size_t user_page_limit)
              user_pages, "user pool");
 }
 
+size_t get_page_idx(sturct bitmap *b, size_t start, size_t cnt, bool value){
+    int size_val = 1;
+    int idx = 0;//inx는 0부터 시작해서 할당가능한지 여부를 판단.
+    while(cnt > size_val){ //cnt가 2의 진수보다 클때까지 2를 곱해버려
+      size_val = size_val * 2;
+    }
+    while(idx <= bitmap_size(b)){
+      if(!bitmap_contains(b, idx, size_val, !value)){
+        bitmap_set_multiple(b,idx,size_val,!value);
+        return idx;
+      }
+      else{ //size만큼 인덱스를 옮기고 다시 확인
+        idx += size_val;
+      }
+    }
+    return BITMAP_ERROR;
+}
 /* Obtains and returns a group of PAGE_CNT contiguous free pages.
    If PAL_USER is set, the pages are obtained from the user pool,
    otherwise from the kernel pool.  If PAL_ZERO is set in FLAGS,
@@ -78,11 +96,13 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
     return NULL;
 
   lock_acquire (&pool->lock);
-  page_idx = bitmap_scan_and_flip (pool->used_map, 0, page_cnt, false);
+  page_idx = get_page_idx (pool->used_map, 0, page_cnt, false);
+
   lock_release (&pool->lock);
 
   if (page_idx != BITMAP_ERROR)
     pages = pool->base + PGSIZE * page_idx;
+
   else
     pages = NULL;
 
@@ -117,6 +137,7 @@ palloc_get_page (enum palloc_flags flags)
 void
 palloc_free_multiple (void *pages, size_t page_cnt) 
 {
+  
   struct pool *pool;
   size_t page_idx;
 
@@ -132,6 +153,13 @@ palloc_free_multiple (void *pages, size_t page_cnt)
     NOT_REACHED ();
 
   page_idx = pg_no (pages) - pg_no (pool->base);
+  
+  //buddy에 맞는 사이즈에 넣어주기
+  int size = 1;
+  while(size >= page_cnt){
+    size = size * 2;
+  }
+  page_cnt = size;
 
 #ifndef NDEBUG
   memset (pages, 0xcc, PGSIZE * page_cnt);
@@ -181,11 +209,38 @@ page_from_pool (const struct pool *pool, void *page)
   return page_no >= start_page && page_no < end_page;
 }
 
+
+
 /* Obtains a status of the page pool */
 void
 palloc_get_status (enum palloc_flags flags)
 {
-  //IMPLEMENT THIS
-  //PAGE STATUS 0 if FREE, 1 if USED
-  //32 PAGE STATUS PER LINE
+  // TODO: IMPLEMENT THIS
+  struct bitmap *kernel_bitmap = kernel_pool.used_map;
+  size_t kernel_size = bitmap_size(kernel_bitmap);
+  printf("Page Count : %d\n", kernel_size);
+  int loop_num = kernel_size / 32;
+  for (int i = 1; i <= 32; i++) //! 1~32까지 출력.(01 02 03 04)
+  {
+    if (i < 10)
+    {
+      printf("0%d ", i);
+    }
+    else
+    {
+      printf("%d ", i);
+    }
+  }
+  printf("\n");
+
+  for (int i = 0; i < 8; i++)
+  {
+    for (int j = 0; j < 32; j++)
+    {
+      printf("%zu  ", bitmap_test(kernel_bitmap, 32 * i + j));
+    }
+    printf("\n");
+  }
+
 }
+
